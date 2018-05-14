@@ -1,0 +1,7 @@
+{
+    "name": "Recycle",
+    "package": "plugin",
+    "games": [
+        "rust"
+    ]
+}
