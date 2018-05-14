@@ -13,7 +13,6 @@ namespace Oxide.Plugins
     {
         #region Configuration
 
-
         float cooldownMinutes;
         float refundRatio;
         string box;
