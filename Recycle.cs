@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info ("Recycle", "Calytic/rustservers.io", "2.1.1", ResourceId = 1296)]
+    [Info ("Recycle", "Calytic/rustservers.io", "2.1.2", ResourceId = 1296)]
     [Description ("Recycle crafted items to base resources")]
     class Recycle : RustPlugin
     {
