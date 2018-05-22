@@ -7,11 +7,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-<<<<<<< Updated upstream
-    [Info ("Recycle", "Calytic/rustservers.io", "2.1.2", ResourceId = 1296)]
-=======
     [Info ("Recycle", "Calytic/rustservers.io")]
->>>>>>> Stashed changes
     [Description ("Recycle crafted items to base resources")]
     class Recycle : RustPlugin
     {
