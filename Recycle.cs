@@ -12,7 +12,6 @@ namespace Oxide.Plugins
     class Recycle : RustPlugin
     {
         #region Configuration
-        SOMETHINGSUPERINVALID = SOMETHINGSUPERINVALID;
         float cooldownMinutes;
         float refundRatio;
         string box;
