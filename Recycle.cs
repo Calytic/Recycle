@@ -11,6 +11,7 @@ namespace Oxide.Plugins
     [Description ("Recycle crafted items to base resources")]
     class Recycle : RustPlugin
     {
+
         #region Configuration
         float cooldownMinutes;
         float refundRatio;
