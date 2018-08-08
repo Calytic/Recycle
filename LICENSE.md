@@ -1,4 +1,4 @@
-MIT License
+MIT License3
 
 Copyright (c) 2018 Calytic
 
