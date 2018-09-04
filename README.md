@@ -8,7 +8,7 @@
 
 ##     Commands
 
-* /rec
+* **/rec**  
   Open recycle box
 
 ## Configuration
