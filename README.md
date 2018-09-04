@@ -1,9 +1,14 @@
-Recycle
-hello world
-test22222
+**Recycle** allows players to recycle crafted items to base resources
 
-test change
+##     Permissions
 
-```cs
-var SomeExample = true;
-```
+        **recycle.use**
+        Ex. `grant group default recycle.use`
+        Ex. `grant user Calytic recycle.use`
+
+##     Commands
+
+* /rec
+  Open recycle box
+
+## Configuration
