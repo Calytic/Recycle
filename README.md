@@ -2,9 +2,9 @@
 
 ##     Permissions
 
-        **recycle.use**
-        Ex. `grant group default recycle.use`
-        Ex. `grant user Calytic recycle.use`
+* **recycle.use**
+  Ex. `grant group default recycle.use`
+  Ex. `grant user Calytic recycle.use`
 
 ##     Commands
 
