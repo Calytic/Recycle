@@ -1,14 +1,20 @@
 **Recycle** allows players to recycle crafted items to base resources
 
-##     Permissions
+## Permissions
 
 * **recycle.use**  
   Ex. `grant group default recycle.use`  
   Ex. `grant user Calytic recycle.use`
 
-##     Commands
+## Commands
 
-* **/rec**  
+* `/rec`  
   Open recycle box
 
 ## Configuration
+
+## API
+
+```csharp
+bool IsRecycleBox(BaseNetworkable entity)
+```

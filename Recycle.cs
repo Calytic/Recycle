@@ -7,24 +7,27 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info ("Recycle", "Calytic/rustservers.io", "2.1.6", ResourceId = 1296)]
+    [Info ("Recycle", "Calytic", "2.1.9")]
     [Description ("Recycle crafted items to base resources")]
     class Recycle : RustPlugin
     {
-
         #region Configuration
+
         float cooldownMinutes;
         float refundRatio;
+        float scrapMultiplier;
         string box;
         bool npconly;
         List<object> npcids;
         float radiationMax;
+        List<object> recyclableTypes;
+        bool allowSafeZone;
 
         #endregion
 
         #region State
 
-        private Dictionary<string, DateTime> recycleCooldowns = new Dictionary<string, DateTime> ();
+        Dictionary<string, DateTime> recycleCooldowns = new Dictionary<string, DateTime> ();
 
         class OnlinePlayer
         {
@@ -52,9 +55,12 @@ namespace Oxide.Plugins
             Config ["Settings", "box"] = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab";
             Config ["Settings", "cooldownMinutes"] = 5;
             Config ["Settings", "refundRatio"] = 0.5f;
+            Config ["Settings", "scrapMultiplier"] = 1f;
             Config ["Settings", "radiationMax"] = 1;
             Config ["Settings", "NPCOnly"] = false;
             Config ["Settings", "NPCIDs"] = new List<object> ();
+            Config ["Settings", "recyclableTypes"] = GetDefaultRecyclableTypes ();
+            Config ["Settings", "allowSafeZone"] = true;
             Config ["VERSION"] = Version.ToString ();
         }
 
@@ -71,21 +77,27 @@ namespace Oxide.Plugins
         void Init ()
         {
             Unsubscribe (nameof (CanNetworkTo));
+            Unsubscribe (nameof (OnEntityTakeDamage));
         }
 
         void Loaded ()
         {
             permission.RegisterPermission ("recycle.use", this);
+            permission.RegisterPermission ("recycle.nocooldown", this);
             LoadMessages ();
             CheckConfig ();
 
             cooldownMinutes = GetConfig ("Settings", "cooldownMinutes", 5f);
+
             box = GetConfig ("Settings", "box", "assets/prefabs/deployable/woodenbox/box_wooden.item.prefab");
             refundRatio = GetConfig ("Settings", "refundRatio", 0.5f);
+            scrapMultiplier = GetConfig ("Settings", "scrapMultiplier", 1f);
             radiationMax = GetConfig ("Settings", "radiationMax", 1f);
+            recyclableTypes = GetConfig ("Settings", "recyclableTypes", GetDefaultRecyclableTypes ());
 
             npconly = GetConfig ("Settings", "NPCOnly", false);
             npcids = GetConfig ("Settings", "NPCIDs", new List<object> ());
+            allowSafeZone = GetConfig ("Settings", "allowSafeZone", true);
         }
 
         void CheckConfig ()
@@ -93,7 +105,7 @@ namespace Oxide.Plugins
             if (Config ["VERSION"] == null) {
                 // FOR COMPATIBILITY WITH INITIAL VERSIONS WITHOUT VERSIONED CONFIG
                 ReloadConfig ();
-            } else if (GetConfig<string> ("VERSION", "") != Version.ToString ()) {
+            } else if (GetConfig ("VERSION", "") != Version.ToString ()) {
                 // ADDS NEW, IF ANY, CONFIGURATION OPTIONS
                 ReloadConfig ();
             }
@@ -113,26 +125,48 @@ namespace Oxide.Plugins
         void LoadMessages ()
         {
             lang.RegisterMessages (new Dictionary<string, string>
-                {
-                    { "Recycle: Complete", "Recycling <color=lime>{0}</color> to {1}% base materials:" },
-                    { "Recycle: Item", "    <color=lime>{0}</color> X <color=yellow>{1}</color>" },
-                    { "Recycle: Invalid", "Cannot recycle that!" },
-                    { "Denied: Permission", "You lack permission to do that" },
-                    { "Denied: Privilege", "You lack permission to do that" },
-                    { "Denied: Swimming", "You cannot do that while swimming" },
-                    { "Denied: Falling", "You cannot do that while falling" },
-                    { "Denied: Wounded", "You cannot do that while wounded" },
-                    { "Denied: Irradiated", "You cannot do that while irradiated" },
-                    { "Denied: Generic", "You cannot do that right now" },
-                    { "Cooldown: Seconds", "You are doing that too often, try again in a {0} seconds(s)." },
-                    { "Cooldown: Minutes", "You are doing that too often, try again in a {0} minute(s)." },
-                }, this);
+            {
+                { "Recycle: Complete", "Recycling <color=lime>{0}</color> to {1}% base materials:" },
+                { "Recycle: Item", "    <color=lime>{0}</color> X <color=yellow>{1}</color>" },
+                { "Recycle: Invalid", "Cannot recycle that!" },
+                { "Denied: Permission", "You lack permission to do that" },
+                { "Denied: Privilege", "You lack build privileges and cannot do that" },
+                { "Denied: Swimming", "You cannot do that while swimming" },
+                { "Denied: Falling", "You cannot do that while falling" },
+                { "Denied: Mounted", "You cannot do that while mounted" },
+                { "Denied: Wounded", "You cannot do that while wounded" },
+                { "Denied: Irradiated", "You cannot do that while irradiated" },
+                { "Denied: Generic", "You cannot do that right now" },
+                { "Denied: Ship", "You cannot do that while on a ship"},
+                { "Denied: Lift", "You cannot do that while on a lift"},
+                { "Denied: Balloon", "You cannot do that while on a balloon"},
+                { "Denied: Safe Zone", "You cannot do that while in a safe zone"},
+                { "Cooldown: Seconds", "You are doing that too often, try again in a {0} seconds(s)." },
+                { "Cooldown: Minutes", "You are doing that too often, try again in a {0} minute(s)." },
+            }, this);
         }
 
-        private bool IsBox (BaseNetworkable entity)
+        List<object> GetDefaultRecyclableTypes ()
+        {
+            return new List<object> () {
+                ItemCategory.Ammunition.ToString(),
+                ItemCategory.Attire.ToString(),
+                ItemCategory.Common.ToString(),
+                ItemCategory.Component.ToString(),
+                ItemCategory.Construction.ToString(),
+                ItemCategory.Items.ToString(),
+                ItemCategory.Medical.ToString(),
+                ItemCategory.Misc.ToString(),
+                ItemCategory.Tool.ToString(),
+                ItemCategory.Traps.ToString(),
+                ItemCategory.Weapon.ToString(),
+            };
+        }
+
+        bool IsRecycleBox (BaseNetworkable entity)
         {
             foreach (KeyValuePair<BasePlayer, OnlinePlayer> kvp in onlinePlayers) {
-                if (kvp.Value.View != null && kvp.Value.View.net.ID == entity.net.ID) {
+                if (kvp.Value?.View?.net != null && entity?.net != null && kvp.Value.View.net.ID == entity.net.ID) {
                     return true;
                 }
             }
@@ -159,7 +193,21 @@ namespace Oxide.Plugins
                 }
             }
 
-            if (IsBox (entity) && !IsMyBox)
+            if (IsRecycleBox (entity) && !IsMyBox)
+                return false;
+
+            return null;
+        }
+
+        object OnEntityTakeDamage (BaseCombatEntity entity, HitInfo hitInfo)
+        {
+            if (hitInfo == null)
+                return null;
+
+            if (entity == null)
+                return null;
+
+            if (IsRecycleBox (entity))
                 return false;
 
             return null;
@@ -204,7 +252,11 @@ namespace Oxide.Plugins
                             item.RemoveFromContainer ();
                         } else {
                             ShowNotification (owner, GetMsg ("Recycle: Invalid", owner));
-                            item.MoveToContainer (owner.inventory.containerMain);
+                            if (!owner.inventory.containerMain.IsFull ()) {
+                                item.MoveToContainer (owner.inventory.containerMain);
+                            } else if (!owner.inventory.containerBelt.IsFull ()) {
+                                item.MoveToContainer (owner.inventory.containerBelt);
+                            }
                         }
                     }
                 }
@@ -218,6 +270,18 @@ namespace Oxide.Plugins
             ShowBox (player, player);
         }
 
+        void AddNpc (string id)
+        {
+            npcids.Add (id);
+        }
+
+        void RemoveNpc (string id)
+        {
+            if (npcids.Contains (id)) {
+                npcids.Remove (id);
+            }
+        }
+
         #endregion
 
         #region Commands
@@ -227,6 +291,20 @@ namespace Oxide.Plugins
         {
             cmdRec (arg.Connection.player as BasePlayer, arg.cmd.Name, arg.Args);
         }
+
+        //[ConsoleCommand ("receverything")]
+        //void ccRecEverything (ConsoleSystem.Arg arg)
+        //{
+        //    if (arg.connection == null) return;
+        //    if (arg.connection.authLevel < 1) return;
+        //    List<ItemDefinition> items = ItemManager.GetItemDefinitions ();
+
+        //    foreach (ItemDefinition def in items) {
+        //        SalvageItem (arg.Connection.player as BasePlayer, ItemManager.Create (def, 1));
+        //    }
+
+        //}
+
 
         [ChatCommand ("rec")]
         void cmdRec (BasePlayer player, string command, string [] args)
@@ -248,7 +326,7 @@ namespace Oxide.Plugins
             if (!CanPlayerRecycle (player))
                 return;
 
-            if (cooldownMinutes > 0 && !player.IsAdmin) {
+            if (cooldownMinutes > 0 && !player.IsAdmin && !permission.UserHasPermission (player.UserIDString, "recycle.nocooldown")) {
                 DateTime startTime;
 
                 if (recycleCooldowns.TryGetValue (playerID, out startTime)) {
@@ -265,13 +343,14 @@ namespace Oxide.Plugins
                             double timelefts = System.Math.Round ((Convert.ToDouble (cooldownMinutes) * 60) - span.TotalSeconds);
                             SendReply (player, string.Format (GetMsg ("Cooldown: Seconds", player), timelefts.ToString ()));
                             return;
-                        } else {
-                            SendReply (player, string.Format (GetMsg ("Cooldown: Minutes", player), System.Math.Round (timeleft).ToString ()));
-                            return;
                         }
-                    } else {
-                        recycleCooldowns.Remove (playerID);
+
+                        SendReply (player, string.Format (GetMsg ("Cooldown: Minutes", player), System.Math.Round (timeleft).ToString ()));
+                        return;
+
                     }
+
+                    recycleCooldowns.Remove (playerID);
                 }
             }
 
@@ -280,12 +359,19 @@ namespace Oxide.Plugins
             }
             var ply = onlinePlayers [player];
             if (ply.View == null) {
-                OpenBoxView (player, target);
+                if (!OpenBoxView (player, target)) {
+                    recycleCooldowns.Remove (playerID);
+                }
                 return;
             }
 
             CloseBoxView (player, ply.View);
-            timer.In (1f, () => OpenBoxView (player, target));
+
+            NextFrame (delegate () {
+                if (!OpenBoxView (player, target)) {
+                    recycleCooldowns.Remove (playerID);
+                }
+            });
         }
 
         void HideBox (BasePlayer player)
@@ -299,20 +385,21 @@ namespace Oxide.Plugins
             CloseBoxView (player, ply.View);
         }
 
-        void OpenBoxView (BasePlayer player, BaseEntity targArg)
+        bool OpenBoxView (BasePlayer player, BaseEntity targArg)
         {
             Subscribe (nameof (CanNetworkTo));
+            Subscribe (nameof (OnEntityTakeDamage));
 
             var pos = new Vector3 (player.transform.position.x, player.transform.position.y - 0.6f, player.transform.position.z);
             int slots = 1;
             var view = GameManager.server.CreateEntity (box, pos) as StorageContainer;
+
+            if (!view)
+                return false;
+
             view.GetComponent<DestroyOnGroundMissing> ().enabled = false;
             view.GetComponent<GroundWatch> ().enabled = false;
             view.transform.position = pos;
-
-
-            if (!view)
-                return;
 
             player.EndLooting ();
             if (targArg is BasePlayer) {
@@ -323,10 +410,10 @@ namespace Oxide.Plugins
                 if ((int)container.uid == 0)
                     container.GiveUID ();
 
-
                 if (!containers.ContainsKey (container)) {
                     containers.Add (container, player.userID);
                 }
+
 
                 view.enableSaving = false;
                 view.Spawn ();
@@ -334,11 +421,16 @@ namespace Oxide.Plugins
                 view.SendNetworkUpdate (BasePlayer.NetworkQueue.Update);
                 onlinePlayers [player].View = view;
                 onlinePlayers [player].Target = target;
-                timer.Once (0.1f, delegate () {
-                    view.PlayerOpenLoot (player);
+                timer.Once (0.2f, delegate () {
+                    if (onlinePlayers [player].View != null) {
+                        onlinePlayers [player].View.PlayerOpenLoot (player);
+                    }
                 });
 
+                return true;
             }
+
+            return false;
         }
 
         void CloseBoxView (BasePlayer player, StorageContainer view)
@@ -360,15 +452,17 @@ namespace Oxide.Plugins
                 player.SendConsoleCommand ("inventory.endloot", null);
             }
 
-
             onlinePlayer.View = null;
             onlinePlayer.Target = null;
 
-            view.KillMessage ();
+            NextFrame (delegate () {
+                view.KillMessage ();
 
-            if (onlinePlayers.Values.Count (p => p.View != null) <= 0) {
-                Unsubscribe (nameof (CanNetworkTo));
-            }
+                if (onlinePlayers.Values.Count (p => p.View != null) <= 0) {
+                    Unsubscribe (nameof (CanNetworkTo));
+                    Unsubscribe (nameof (OnEntityTakeDamage));
+                }
+            });
         }
 
         //        bool SalvageItem(BasePlayer player, Item item)
@@ -413,15 +507,33 @@ namespace Oxide.Plugins
         //            return true;
         //        }
         //
+
+        List<string> exclude = new List<string> () {
+            "scrap",
+            "antiradpills",
+            "battery.small",
+            "blood",
+            "blueprintbase"
+        };
+
         bool SalvageItem (BasePlayer player, Item item)
         {
             if (item == null) {
                 return false;
             }
 
-            if (item.info.shortname == "scrap") {
+            if (!recyclableTypes.Contains (Enum.GetName (typeof (ItemCategory), item.info.category))) {
                 return false;
             }
+
+            if (item.info.category == ItemCategory.Food) {
+                return false;
+            }
+
+            if (exclude.Contains (item.info.shortname)) {
+                return false;
+            }
+
             var refundAmount = refundRatio;
             var sb = new StringBuilder ();
 
@@ -434,8 +546,9 @@ namespace Oxide.Plugins
                 amountToConsume = Mathf.CeilToInt (Mathf.Min (item.amount, item.info.stackable * 0.1f));
             }
 
-            if (item.info.Blueprint.scrapFromRecycle > 0) {
-                var newItem = ItemManager.CreateByName ("scrap", item.info.Blueprint.scrapFromRecycle * amountToConsume);
+            if (item.info.Blueprint != null && item.info.Blueprint.scrapFromRecycle > 0) {
+                float scrapAmount = (item.info.Blueprint.scrapFromRecycle * scrapMultiplier) * amountToConsume;
+                var newItem = ItemManager.CreateByName ("scrap", Convert.ToInt32 (scrapAmount));
                 if (newItem != null) {
                     player.GiveItem (newItem);
                     sb.AppendLine ();
@@ -443,34 +556,37 @@ namespace Oxide.Plugins
                 }
             }
 
-            item.UseItem (amountToConsume);
-            foreach (ItemAmount current in item.info.Blueprint.ingredients.OrderBy (x => Core.Random.Range (0, 1000))) {
-                if (!(current.itemDef.shortname == "scrap") && item.info.Blueprint != null) {
-                    var refundMultiplier = current.amount / item.info.Blueprint.amountToCreate;
-                    var refundMaximum = 0;
-                    if (refundMultiplier <= 1) {
-                        for (var index = 0; index < amountToConsume; ++index) {
-                            if (Core.Random.Range (0, 1) <= refundAmount) {
-                                ++refundMaximum;
+
+            if (item.info.Blueprint != null && item.info.Blueprint.ingredients.Count > 0) {
+                item.UseItem (amountToConsume);
+                foreach (ItemAmount current in item.info.Blueprint.ingredients.OrderBy (x => Core.Random.Range (0, 1000))) {
+                    if (!(current.itemDef.shortname == "scrap") && item.info.Blueprint != null) {
+                        var refundMultiplier = current.amount / item.info.Blueprint.amountToCreate;
+                        var refundMaximum = 0;
+                        if (refundMultiplier <= 1) {
+                            for (var index = 0; index < amountToConsume; ++index) {
+                                if (Core.Random.Range (0, 1) <= refundAmount) {
+                                    ++refundMaximum;
+                                }
                             }
+                        } else {
+                            refundMaximum = Mathf.CeilToInt (Mathf.Clamp (refundMultiplier * refundAmount, 0f, current.amount) * amountToConsume);
                         }
-                    } else {
-                        refundMaximum = Mathf.CeilToInt (Mathf.Clamp (refundMultiplier * refundAmount, 0f, current.amount) * amountToConsume);
-                    }
 
-                    if (refundMaximum > 0) {
-                        int refundIterations = Mathf.Clamp (Mathf.CeilToInt (refundMaximum / current.itemDef.stackable), 1, refundMaximum);
-                        for (var index = 0; index < refundIterations; ++index) {
-                            var itemAmount = refundMaximum <= current.itemDef.stackable ? refundMaximum : current.itemDef.stackable;
-                            var newItem = ItemManager.Create (current.itemDef, itemAmount);
-                            if (newItem != null) {
-                                player.GiveItem (newItem);
-                                sb.AppendLine ();
-                                sb.Append (string.Format (GetMsg ("Recycle: Item", player), newItem.info.displayName.english, newItem.amount));
+                        if (refundMaximum > 0) {
+                            int refundIterations = Mathf.Clamp (Mathf.CeilToInt (refundMaximum / current.itemDef.stackable), 1, refundMaximum);
+                            for (var index = 0; index < refundIterations; ++index) {
+                                var itemAmount = refundMaximum <= current.itemDef.stackable ? refundMaximum : current.itemDef.stackable;
+                                var newItem = ItemManager.Create (current.itemDef, itemAmount);
+                                if (newItem != null) {
+                                    player.GiveItem (newItem);
+                                    sb.AppendLine ();
+                                    sb.Append (string.Format (GetMsg ("Recycle: Item", player), newItem.info.displayName.english, newItem.amount));
 
-                                refundMaximum -= itemAmount;
-                                if (refundMaximum <= 0)
-                                    break;
+                                    refundMaximum -= itemAmount;
+                                    if (refundMaximum <= 0)
+                                        break;
+                                }
                             }
                         }
                     }
@@ -480,9 +596,14 @@ namespace Oxide.Plugins
             var msg = sb.ToString ();
             if (msg != string.Empty) {
                 ShowNotification (player, msg);
+                if (Interface.Oxide.CallHook ("OnRecycleItemSalvaged", player, item) != null) {
+                    return false;
+                }
+
+                return true;
             }
 
-            return true;
+            return false;
         }
 
         bool CanPlayerRecycle (BasePlayer player)
@@ -496,24 +617,49 @@ namespace Oxide.Plugins
                 SendReply (player, GetMsg ("Denied: Privilege", player));
                 return false;
             }
+
             if (radiationMax > 0 && player.radiationLevel > radiationMax) {
                 SendReply (player, GetMsg ("Denied: Irradiated", player));
                 return false;
             }
+
             if (player.IsSwimming ()) {
                 SendReply (player, GetMsg ("Denied: Swimming", player));
                 return false;
             }
-            if (!player.IsOnGround ()) {
+
+            if (!player.IsOnGround () || player.IsFlying || player.isInAir) {
                 SendReply (player, GetMsg ("Denied: Falling", player));
                 return false;
             }
-            if (player.IsFlying) {
-                SendReply (player, GetMsg ("Denied: Falling", player));
+
+            if (player.isMounted) {
+                SendReply (player, GetMsg ("Denied: Mounted", player));
                 return false;
             }
+
             if (player.IsWounded ()) {
                 SendReply (player, GetMsg ("Denied: Wounded", player));
+                return false;
+            }
+
+            if (player.GetComponentInParent<CargoShip> ()) {
+                SendReply (player, GetMsg ("Denied: Ship", player));
+                return false;
+            }
+
+            if (player.GetComponentInParent<HotAirBalloon> ()) {
+                SendReply (player, GetMsg ("Denied: Balloon", player));
+                return false;
+            }
+
+            if (player.GetComponentInParent<Lift> ()) {
+                SendReply (player, GetMsg ("Denied: Lift", player));
+                return false;
+            }
+
+            if (!allowSafeZone && player.InSafeZone ()) {
+                SendReply (player, GetMsg ("Denied: Safe Zone", player));
                 return false;
             }
 
@@ -534,16 +680,16 @@ namespace Oxide.Plugins
 
         #region GUI
 
-        public string jsonNotify = @"[{""name"":""NotifyMsg"",""parent"":""Overlay"",""components"":[{""type"":""UnityEngine.UI.Image"",""color"":""0 0 0 0.89""},{""type"":""RectTransform"",""anchormax"":""0.99 0.94"",""anchormin"":""0.69 0.77""}]},{""name"":""MassText"",""parent"":""NotifyMsg"",""components"":[{""type"":""UnityEngine.UI.Text"",""text"":""{msg}"",""fontSize"":16,""align"":""UpperLeft""},{""type"":""RectTransform"",""anchormax"":""0.98 0.99"",""anchormin"":""0.01 0.02""}]},{""name"":""CloseButton{1}"",""parent"":""NotifyMsg"",""components"":[{""type"":""UnityEngine.UI.Button"",""color"":""0.95 0 0 0.68"",""close"":""NotifyMsg"",""imagetype"":""Tiled""},{""type"":""RectTransform"",""anchormax"":""0.99 1"",""anchormin"":""0.91 0.86""}]},{""name"":""CloseButtonLabel"",""parent"":""CloseButton{1}"",""components"":[{""type"":""UnityEngine.UI.Text"",""text"":""X"",""fontSize"":5,""align"":""MiddleCenter""},{""type"":""RectTransform"",""anchormax"":""1 1"",""anchormin"":""0 0""}]}]";
+        public string jsonNotify = @"[{""name"":""NotifyMsg"",""parent"":""Overlay"",""components"":[{""type"":""UnityEngine.UI.Image"",""color"":""0 0 0 0.89""},{""type"":""RectTransform"",""anchormax"":""0.99 0.94"",""anchormin"":""0.69 0.77""}]},{""name"":""MassText"",""parent"":""NotifyMsg"",""components"":[{""type"":""UnityEngine.UI.Text"",""text"":""{msg}"",""fontSize"":16,""align"":""UpperLeft""},{""type"":""RectTransform"",""anchormax"":""0.98 0.99"",""anchormin"":""0.01 0.02""}]},{""name"":""CloseButton{1}"",""parent"":""NotifyMsg"",""components"":[{""type"":""UnityEngine.UI.Button"",""color"":""0.95 0 0 0.68"",""close"":""NotifyMsg"",""imagetype"":""Tiled""},{""type"":""RectTransform"",""anchormax"":""0.99 1"",""anchormin"":""0.91 0.86""}]},{""name"":""CloseButtonLabel"",""parent"":""CloseButton{1}"",""components"":[{""type"":""UnityEngine.UI.Text"",""text"":""X"",""fontSize"":10,""align"":""MiddleCenter""},{""type"":""RectTransform"",""anchormax"":""1 1"",""anchormin"":""0 0""}]}]";
 
         public void ShowNotification (BasePlayer player, string msg)
         {
-            this.HideNotification (player);
+            HideNotification (player);
             string send = jsonNotify.Replace ("{msg}", msg);
 
             CommunityEntity.ServerInstance.ClientRPCEx (new Network.SendInfo { connection = player.net.connection }, null, "AddUI", send);
             timer.Once (3f, delegate () {
-                this.HideNotification (player);
+                HideNotification (player);
             });
         }
 
@@ -556,7 +702,7 @@ namespace Oxide.Plugins
 
         #region HelpText
 
-        private void SendHelpText (BasePlayer player)
+        void SendHelpText (BasePlayer player)
         {
             var sb = new StringBuilder ()
                .Append ("Recycle by <color=#ce422b>http://rustservers.io</color>\n")
@@ -573,18 +719,22 @@ namespace Oxide.Plugins
             return lang.GetMessage (key, this, player == null ? null : player.UserIDString);
         }
 
-        private T GetConfig<T> (string name, T defaultValue)
+        T GetConfig<T> (string name, T defaultValue)
         {
             if (Config [name] == null) {
+                Config [name] = defaultValue;
+                Config.Save ();
                 return defaultValue;
             }
 
             return (T)Convert.ChangeType (Config [name], typeof (T));
         }
 
-        private T GetConfig<T> (string name, string name2, T defaultValue)
+        T GetConfig<T> (string name, string name2, T defaultValue)
         {
             if (Config [name, name2] == null) {
+                Config [name, name2] = defaultValue;
+                Config.Save ();
                 return defaultValue;
             }
 
