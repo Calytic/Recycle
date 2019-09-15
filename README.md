@@ -1,15 +1,12 @@
-**Recycle** allows players to recycle crafted items to base resources
+**Recycle** allows players to recycle crafted items to base resources.
 
 ## Permissions
 
-* **recycle.use**  
-  Ex. `grant group default recycle.use`  
-  Ex. `grant user Calytic recycle.use`
+* `recycle.use` -- Allows players to use the `/rec` chat command
 
 ## Commands
 
-* `/rec`  
-  Open recycle box
+* `/rec` -- Open recycle box
 
 ## Configuration
 
