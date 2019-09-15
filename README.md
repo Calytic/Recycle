@@ -13,7 +13,7 @@
 
 ## Configuration
 
-## API
+## For Developers
 
 ```csharp
 bool IsRecycleBox(BaseNetworkable entity)
