@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Oxide.Core;
@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info ("Recycle", "Calytic", "2.1.9")]
+    [Info ("Recycle", "Calytic", "2.1.10")]
     [Description ("Recycle crafted items to base resources")]
     class Recycle : RustPlugin
     {
@@ -21,6 +21,7 @@ namespace Oxide.Plugins
         List<object> npcids;
         float radiationMax;
         List<object> recyclableTypes;
+        List<object> blackList;
         bool allowSafeZone;
 
         #endregion
@@ -60,6 +61,7 @@ namespace Oxide.Plugins
             Config ["Settings", "NPCOnly"] = false;
             Config ["Settings", "NPCIDs"] = new List<object> ();
             Config ["Settings", "recyclableTypes"] = GetDefaultRecyclableTypes ();
+            Config ["Settings", "blacklist"] = new List<object>();
             Config ["Settings", "allowSafeZone"] = true;
             Config ["VERSION"] = Version.ToString ();
         }
@@ -94,6 +96,7 @@ namespace Oxide.Plugins
             scrapMultiplier = GetConfig ("Settings", "scrapMultiplier", 1f);
             radiationMax = GetConfig ("Settings", "radiationMax", 1f);
             recyclableTypes = GetConfig ("Settings", "recyclableTypes", GetDefaultRecyclableTypes ());
+            blackList = GetConfig("Settings", "blacklist", new List<object>());
 
             npconly = GetConfig ("Settings", "NPCOnly", false);
             npcids = GetConfig ("Settings", "NPCIDs", new List<object> ());
@@ -524,6 +527,11 @@ namespace Oxide.Plugins
 
             if (!recyclableTypes.Contains (Enum.GetName (typeof (ItemCategory), item.info.category))) {
                 return false;
+            }
+            
+            if(blackList.Contains (item.info.shortname))
+            {
+                return false;   
             }
 
             if (item.info.category == ItemCategory.Food) {
